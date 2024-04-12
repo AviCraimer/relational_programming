@@ -1,68 +1,61 @@
-// Define a data structure to be used for abstract syntax set.
+import { IndividualVariable } from "../AbstractIndividual/types";
 
-const setsSubtypesRelations = [
-    ["Number", "Integer"],
-    ["Number", "Natural"],
-    ["String", "String"],
-    ["{uuid:String}", "{uuid:String}"], // An object with a uuid field (not excluding additional properties)
-    // TODO: Consider if I should add support for these:
-    // ["{id:String}", "{id:String}"], // Use for id strings which are unique within a collection but not universally unique
-    // ["{id:Number}", "{id:Number}"], // Use for id integers which are unique within a collection but not universally unique
-] as const;
+export type SetExpression = AtomicSet | ProductSet | CoproductSet | UnionSet | IntersectionSet | SingletonSet | EmptySet | BooleanSet | RelationSet | ImageSet;
 
-type PredefinedSetTypeLabel = (typeof setsSubtypesRelations)[number][0] | (typeof setsSubtypesRelations)[number][1];
+const setSyntaxLabels = ["AtomicSet", "ProductSet", "CoproductSet", "UnionSet", "IntersectionSet", "SingletonSet", "EmptySet", "RelationSet", "BooleanSet", "ImageSet"] as const;
 
-type FiniteSetLabel<T extends PredefinedSetTypeLabel> = `FiniteSet<${T}>`;
+export type SetSyntaxLabel = (typeof setSyntaxLabels)[number];
 
-type PredefinedSetType<T extends PredefinedSetTypeLabel> = T extends "Number" | "Natural" | "Integer" ? Number : never | T extends "String" ? String : never | T extends "{uuid:String}" ? { uuid: String } : never;
-
-type SetTypeLabel = PredefinedSetTypeLabel | FiniteSetLabel<PredefinedSetTypeLabel>;
-
-type SetFiniteType<T extends PredefinedSetTypeLabel> = Set<PredefinedSetType<T>>;
-
-type AbstractSet<T> = T extends PredefinedSetTypeLabel ? SetFinite<T> : never | SetComplement<T> | T extends [infer A, infer B] ? SetProduct<[A, B]> : never;
-
-export type SetPredefined<A extends PredefinedSetTypeLabel> = {
+export type SetExpressionCommon = {
     type: "SetExpression";
-    syntax: "SetPredefined";
-    setType: A;
+    syntax: SetSyntaxLabel;
+    children: SetExpressionCommon[] | never[];
 };
 
-export type SetFinite<A extends PredefinedSetTypeLabel> = {
-    // A should be constrained to be a valid type for the set expression.
-    type: "SetExpression";
-    syntax: "FiniteSet";
-    setType: FiniteSetLabel<A>;
-    value: Set<A>;
+export type AtomicSet = SetExpressionCommon & {
+    syntax: "AtomicSet";
+    children: never[];
+    setVariable: string;
+};
+export type ProductSet = SetExpressionCommon & {
+    syntax: "ProductSet";
+    children: SetExpression[];
 };
 
-export type SetComplement<A extends PredefinedSetTypeLabel> = {
-    type: "SetExpression";
-    syntax: "SetComplement";
-    children: [Set<A>];
+export type CoproductSet = SetExpressionCommon & {
+    syntax: "CoproductSet";
+    children: SetExpression[];
 };
 
-export type SetProduct<Pair extends [unknown, unknown]> = Pair extends [infer A, infer B]
-    ? {
-          type: "SetExpression";
-          syntax: "SetProduct";
-          children: [A, B];
-      }
-    : never;
+export type UnionSet = SetExpressionCommon & {
+    syntax: "UnionSet";
+    children: SetExpression[];
+};
+export type IntersectionSet = SetExpressionCommon & {
+    syntax: "IntersectionSet";
+    children: SetExpression[];
+};
+export type SingletonSet = SetExpressionCommon & {
+    syntax: "SingletonSet";
+    individualVariable: IndividualVariable;
+    children: [];
+};
+export type EmptySet = SetExpressionCommon & {
+    syntax: "EmptySet";
+    children: never[];
+};
+export type RelationSet = SetExpressionCommon & {
+    syntax: "RelationSet";
+    relationExpression: RelationExpression<unknown, unknown>;
+    children: never[];
+};
+export type BooleanSet = SetExpressionCommon & {
+    syntax: "BooleanSet";
+    children: never[];
+};
 
-export type SetInjection<T, I extends 0 | 1> = 0 | 1 extends I
-    ? never // This ensures we don't have both 0 and 1
-    : {
-          type: "SetFunctionExpression";
-          syntax: "CoproductInjection";
-          side: I;
-          value: T;
-      };
-
-export type SetCoproduct<Pair extends [unknown, unknown]> = Pair extends [infer A, infer B]
-    ? {
-          type: "SetExpression";
-          syntax: "Coproduct";
-          injection: SetInjection<A, 0> | SetInjection<B, 1>;
-      }
-    : never;
+export type ImageSet = SetExpressionCommon & {
+    syntax: "ImageSet";
+    relationExpression: RelationExpression<unknown, unknown>;
+    children: never[];
+};

@@ -1,51 +1,89 @@
-import { SetCoproduct, SetProduct } from "../SetStructures/AbstractSet";
-import { RelationMap } from "./RelationMap";
+import { TypeEq } from "../../sharedTypes/utils";
+import { CoproductSet, ProductSet, SetExpression, SingletonSet } from "../AbstractSet/types";
 
-type TypeEq<A, B> = [A, B] extends [B, A] ? true : false;
+type RelationExpression<A extends SetExpression, B extends SetExpression> =
+    | AtomicRelation<A, B>
+    | EmptyRelation<A, B>
+    | ComplementRelation<A, B>
+    | ConverseRelation<A, B>
+    | ComposedRelation<A, B>
+    | SetRelation<A, B>
+    | FullRelation<A, B>
 
-type RelationExpression<A, B> = BaseRelation<A, B> | TypeEq<A, B> extends true
-    ? SingletonRelation<A>
-    : never | FullRelation<A, B> | EmptyRelation<A, B> | ComplementRelation<A, B> | ReverseRelation<A, B> | SequentialComposition<A, B> | RelationProduct<A, B> | RelationCoproduct<A, B>;
+    // Relations with restricted domains/codomains
+    // SingletonSet
+    | TypeEq<A, B> extends true
+    ? A extends SingletonSet
+        ? SingletonRelation<A>
+        : never
+    : never | A extends ProductSet
+    ? B extends ProductSet
+        ? ProductRelation<A, B>
+        : never
+    : never | A extends CoproductSet
+    ? B extends CoproductSet
+        ? PlusRelation<A, B>
+        : never
+    : never;
 
-type BaseRelation<A, B> = {
+const relationSyntaxLabels = ["AtomicRelation", "SingletonRelation", "FullRelation", "EmptyRelation", "ComplementRelation", "ConverseRelation", "ComposedRelation", "ProductRelation", "PlusRelation", "SetRelation"] as const;
+
+type RelationSyntaxLabel = (typeof relationSyntaxLabels)[number];
+
+type RelationExpressionCommon = {
     type: "RelationExpression";
-    syntax: "BaseRelation";
-    relationMap: RelationMap<A, B>;
+    syntax: RelationSyntaxLabel;
+    domain: SetExpression;
+    codomain: SetExpression;
+    children: RelationExpressionCommon[] | never[];
+};
+
+type AtomicRelation<A extends SetExpression, B extends SetExpression> = RelationExpressionCommon & {
+    type: "RelationExpression";
+    syntax: "AtomicRelation";
+    relationName: string;
+    domain: A;
+    codomain: B;
+    children: never[];
 };
 
 // Lift any value a:A to a relation {a} x {a}
-type SingletonRelation<A> = {
-    type: "RelationExpression";
+type SingletonRelation<A extends SingletonSet> = RelationExpressionCommon & {
     syntax: "SingletonRelation";
-    value: A;
-    relationMap: RelationMap<A, A>;
+    domain: A;
+    codomain: A;
+    children: never[];
 };
 
 // For types A and B the full relation has all pairs. If fixedSets are specified for either domain or codomain, then the full relation is restricted to the provided set. No RelationMap is needed since it would be pointless to use memory to store everything.
-type FullRelation<A, B> = {
-    type: "RelationExpression";
+type FullRelation<A extends SetExpression, B extends SetExpression> = RelationExpressionCommon & {
     syntax: "FullRelation";
-    fixedSets: [domain: Set<A> | undefined, codomain: Set<B> | undefined];
+    domain: A;
+    codomain: B;
+    children: never[];
 };
 
-// Similar to full, but with no pairs. Essentially, this just stores the domain and codomain. Useful for relational algebra / logic.
-type EmptyRelation<A, B> = {
-    type: "RelationExpression";
+// Similar to full, but with no pairs. Essentially, this just stores the domain and codomain.
+type EmptyRelation<A extends SetExpression, B extends SetExpression> = RelationExpressionCommon & {
     syntax: "EmptyRelation";
-    fixedSets: [domain: Set<A> | undefined, codomain: Set<B> | undefined];
+    domain: A;
+    codomain: B;
+    children: never[];
 };
 
 // For all R subset A x B, take all pairs (a, b) of A x B which are not in R.
-type ComplementRelation<A, B> = {
-    type: "RelationExpression";
+type ComplementRelation<A extends SetExpression, B extends SetExpression> = RelationExpressionCommon & {
     syntax: "ComplementRelation";
     children: [RelationExpression<A, B>];
+    domain: A;
+    codomain: B;
 };
 
 // For R subset A x B, take the reversed pairs (b, a) to form a relation subset B x A.
-type ReverseRelation<B, A> = {
-    type: "RelationExpression";
-    syntax: "ReverseRelation";
+type ConverseRelation<B extends SetExpression, A extends SetExpression> = RelationExpressionCommon & {
+    syntax: "ConverseRelation";
+    domain: B;
+    codomain: A;
     children: [RelationExpression<A, B>];
 };
 
@@ -53,35 +91,60 @@ type ReverseRelation<B, A> = {
 // If we have two relations A-R->B C-S->D, they are composable if B is a subset of C or C is a subset of B.
 // This is a slight generalization from the normal rule.
 // We could simplify this by saying that any relations can be composed, but if the middle set is disjoint the resulting composed relation will be empty (this follows from the definition of composition since there is no thread running from beggining to end)
-type SequentialComposition<A, C> = {
-    type: "RelationExpression";
-    syntax: "SequentialComposition";
-    children: [RelationExpression<A, unknown>, RelationExpression<unknown, C>];
+type ComposedRelation<A extends SetExpression, C extends SetExpression> = RelationExpressionCommon & {
+    syntax: "ComposedRelation";
+    children: [RelationExpression<A, SetExpression>, RelationExpression<SetExpression, C>];
+    domain: A;
+    codomain: C;
 };
 
-type RelationProduct<T, S> = T extends SetProduct<infer A, infer B>
-    ? S extends SetProduct<infer C, infer D>
-        ? {
-              type: "RelationExpression";
-              syntax: "RelationProduct";
-              children: [RelationExpression<A, C>, RelationExpression<B, D>];
-          }
-        : never
-    : never;
+type ProductRelation<A extends ProductSet, B extends ProductSet> = RelationExpressionCommon & {
+    syntax: "ProductRelation";
+    children: RelationExpression<SetExpression, SetExpression>[];
+    domain: A;
+    codomain: B;
+};
 
-type RelationCoproduct<T, S> = T extends SetCoproduct<infer A, infer B>
-    ? S extends SetCoproduct<infer C, infer D>
-        ? {
-              type: "RelationExpression";
-              syntax: "RelationCoproduct";
-              children: [RelationExpression<A, B>, SetCoproduct<C, D>];
-          }
-        : never
-    : never;
+type PlusRelation<A extends CoproductSet, B extends CoproductSet> = RelationExpressionCommon & {
+    syntax: "PlusRelation";
+    children: RelationExpression<SetExpression, SetExpression>[];
+    domain: A;
+    codomain: B;
+};
+
+// Turn a set of pairs into a relation.
+type SetRelation<A extends SetExpression, B extends SetExpression> = RelationExpressionCommon & {
+    syntax: "SetRelation";
+    // This must be a product with
+    setExpression: ProductSet & { children: [A, B] };
+    children: never[];
+    domain: A;
+    codomain: B;
+};
 
 /*
     Notes/Ideas:
 
+Okay, I just had an idea. There should be an operator that turns any image of a Cartesian product into a relation.
+
+A -R-> B x C
+
+Then you have the image of R as a set, but you also have it as a relation.
+
+This allows us to go back and forth between relations as as morphisms and relations as objects.
+
+We can allow relations to be domains and codomains because they can be regarded as sets. We can also allow sets of pairs to be changed back into relations.
+
+If we use the image of a relation that has a relation as codomain, we are defining a subrelation of that relation.
+
+A -S-> R
+
+RelImage(S) is a sub relation of R.
+
+It might be important to keep track of these subrelation relationships.
+
+
+---
 compose:
   -- Middle terms don't have to match. We don't actually need to define the set for the middle term of the composition. Just check if the thread goes through or not.
 
