@@ -1,4 +1,5 @@
 import { IndividualVariable } from "../AbstractIndividual/types";
+import { RelationExpression } from "../RelationExpression/types";
 
 export type SetExpression = AtomicSet | ProductSet | CoproductSet | UnionSet | IntersectionSet | SingletonSet | EmptySet | BooleanSet | RelationSet | ImageSet;
 
@@ -46,7 +47,7 @@ export type EmptySet = SetExpressionCommon & {
 };
 export type RelationSet = SetExpressionCommon & {
     syntax: "RelationSet";
-    relationExpression: RelationExpression<unknown, unknown>;
+    relationExpression: RelationExpression<any, any>;
     children: never[];
 };
 export type BooleanSet = SetExpressionCommon & {
@@ -54,8 +55,9 @@ export type BooleanSet = SetExpressionCommon & {
     children: never[];
 };
 
-export type ImageSet = SetExpressionCommon & {
+// We are using a default argument here instead of a generic constraint to get around the circularity of the mutual type definition. Take care sure not to pass in an incorrect type.
+export type ImageSet<R = RelationExpression<any, any>> = SetExpressionCommon & {
     syntax: "ImageSet";
-    relationExpression: RelationExpression<unknown, unknown>;
+    relationExpression: R;
     children: never[];
 };

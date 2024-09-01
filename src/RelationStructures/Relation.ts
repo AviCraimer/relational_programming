@@ -1,4 +1,4 @@
-import { RelationMap, RelationMapExtra, RelationPair } from "./RelationMap";
+import { RelationMap, RelationMapExtra, RelationPair } from "@shared-generic";
 
 const lookupSymbol = Symbol("Relation lookup symbol");
 

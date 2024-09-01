@@ -1,7 +1,7 @@
 import { TypeEq } from "../../sharedTypes/utils";
 import { CoproductSet, ProductSet, SetExpression, SingletonSet } from "../AbstractSet/types";
 
-type RelationExpression<A extends SetExpression, B extends SetExpression> =
+export type RelationExpression<A extends SetExpression, B extends SetExpression> =
     | AtomicRelation<A, B>
     | EmptyRelation<A, B>
     | ComplementRelation<A, B>
@@ -93,7 +93,7 @@ type ConverseRelation<B extends SetExpression, A extends SetExpression> = Relati
 // We could simplify this by saying that any relations can be composed, but if the middle set is disjoint the resulting composed relation will be empty (this follows from the definition of composition since there is no thread running from beggining to end)
 type ComposedRelation<A extends SetExpression, C extends SetExpression> = RelationExpressionCommon & {
     syntax: "ComposedRelation";
-    children: [RelationExpression<A, SetExpression>, RelationExpression<SetExpression, C>];
+    children: [RelationExpression<A, any>, RelationExpression<any, C>];
     domain: A;
     codomain: C;
 };
