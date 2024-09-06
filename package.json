@@ -18,9 +18,10 @@
     },
     "dependencies": {
         "@types/lodash": "^4.17.0",
+        "deepdash": "^5.3.9",
         "lodash": "^4.17.21",
         "nanoid": "3.3.4",
         "object-hash": "^3.0.0",
-        "typescript": "^5.4.5"
+        "typescript": "^5.5.4"
     }
 }

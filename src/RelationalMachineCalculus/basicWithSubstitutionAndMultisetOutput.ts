@@ -1,20 +1,126 @@
+import { UnionToTuple } from "shared-generic";
 // Demonstration of Push-Pop Calculus from section 1.2 of the paper.
 // Paper: https://arxiv.org/abs/2405.10801
 
 import { isEqual } from "lodash";
-import { Multiset } from "./MultiSet";
+import { UnionToTuple } from "@shared-generic";
+
+// SYMBOLS
 const RMCVar = Symbol("RMC Variable");
-
 const RMCFail = Symbol("RMC Failure");
+const starUnit = "★";
+const failUnit = "𝟎"; // This is a unicode symbol, unlikely to be used as a string value. Use this instead of the symbol RMCFail.
 
+// TYPE ALIASES
 type Variable = {
     type: typeof RMCVar;
     varName: string;
 };
 
+type Location = string;
+
+// Expressions
+type Pop<L extends Location> = {
+    type: "pop";
+    location: L;
+    varName: string;
+};
+
+type Push<L extends Location> = {
+    type: "push";
+    location: L;
+    varName: string;
+};
+
+type Sum<L extends Location> = {
+    type: "sum";
+    left: RMCExpr<L>;
+    right: RMCExpr<L>;
+};
+
+// Does nothing, and can be used to represent successful computation
+type Skip = {
+    type: "skip";
+};
+
+type Step<L extends Location> = Push<L> | Pop<L> | Sum<L> | Skip;
+
+type StepNames = Step<Location>["type"];
+
+// L is the set of stack locations
+type RMCExpr<L extends Location> = {
+    type: "RMCExpr";
+    sequence: Step<L>[];
+};
+
+// Memory is a set of stacks indexed by location. Here we use strings for location names.
+type RMCMemory<T, L extends string> = {
+    [K in L]: RMCStack<T>;
+};
+
+// An RMCState is a memory (set of stacks) together with a substitution map
+type iRMCState<T, L extends string> = {
+    memory: RMCMemory<T, L>;
+    substitutionMap: Map<string, Variable | T>;
+};
+
+// The input or outputs for an RMC machine is a multiset of RMCStates
+type RMCInputOutput<T, L extends string> = Map<RMCState<T, L>, number>;
+
+type RMCMachine = <T, L extends string>(program: RMCExpr<L>, initial: RMCInputOutput<T, L>) => RMCInputOutput<T, L>;
+
+// The string is the variable name. Which is mapped to a value T or a variable. If a variable is undefined, it's name will not be in the keys.
+type SubstitutionMap<T> = Map<string, T | Variable>;
+
+// CLASS DATA STRUCTURES
+class Substitutions<T> {
+    private substitutionMap: SubstitutionMap<T> = new Map();
+    applySubstitution(varName: string): T | Variable {
+        const hasDef = this.substitutionMap.has(varName);
+
+        if (hasDef) {
+            const definition = this.substitutionMap.get(varName) as Variable | T;
+
+            if (isVariable(definition)) {
+                // Go to the end of the chain of variables defined as variables. This will terminate in a variable that is undefined (in which case the variable itself is returned) or defined as a non-variable value.
+                return this.applySubstitution(definition.varName);
+            } else {
+                return definition;
+            }
+        } else {
+            const self: Variable = {
+                type: RMCVar,
+                varName,
+            };
+            return self;
+        }
+    }
+    update(varName: string, definition: Variable | T): typeof this {
+        if (this.substitutionMap.has(varName)) {
+            throw new Error("variable is already defined, cannot be changed.");
+        }
+
+        this.substitutionMap.set(varName, definition);
+        return this;
+    }
+
+    // Check equality of substitutions by value.
+    eq(substitutionsB: Substitutions<unknown>) {
+        return isEqual(substitutionsB.substitutionMap, this.substitutionMap);
+    }
+}
+
 class RMCStack<T> {
     private items: (T | Variable)[] = [];
+    private multisetCount: number = 1;
+    substitutionMap: SubstitutionMap<T> = new Map();
 
+    increment() {
+        this.multisetCount = this.multisetCount + 1;
+    }
+    get count(): number {
+        return this.multisetCount;
+    }
     push(item: T | Variable): RMCStack<T> {
         this.items.push(item);
         return this;
@@ -40,45 +146,50 @@ class RMCStack<T> {
         copy.items = [...this.items];
         return copy;
     }
+    eq(stackB: RMCStack<T>) {
+        if (this.items.length !== stackB.items.length) {
+            return false;
+        } else {
+            return this.items.every((item, i) => isEqual(item, stackB.items[i]));
+        }
+    }
 }
 
-// Expressions
-type Pop = {
-    type: "pop";
-    varName: string;
+// Takes a set of a locations and a type and returns a memory.
+const initMemory = <T, L extends Location>(locations: L[]) => {
+    const memory: { [x: string]: RMCStack<T> } = {};
+    locations.forEach((l: L) => {
+        memory[l] = new RMCStack<T>();
+    });
+    return memory as RMCMemory<T, L>;
 };
 
-type Push = {
-    type: "push";
-    varName: string;
-};
+const test1 = initMemory(["cat", "dog"]);
 
-type Step = Push | Pop;
+class RMCState<T, L extends Location> implements iRMCState<T, L> {
+    memory: RMCMemory<T, L> = new Map();
+    substitutionMap: Map<string, Variable | T> = new Map();
 
-type StepNames = Step["type"];
+    eq;
+}
 
-type RMCExpr = {
-    type: "RMCExpr";
-    sequence: (Pop | Push)[];
-};
-
-// The string is the variable name. Which is mapped to a value T or a variable. If a variable is undefined, it's name will not be in the keys.
-type SubstitutionMap<T> = Map<string, T | Variable>;
-
-type RMCMemory<T> = {
-    stacks: Multiset<RMCStack<T>>;
-    substitutionMap: SubstitutionMap<T>;
+{
+    // Each stack has a substitution map associated with it as well as a multiset count.
+    stacks: RMCStack < T > [];
     program: RMCExpr;
-};
+}
 
-const stepToString = (step: Step) => {
-    if (step.type === "pop") {
-        return `<${step.varName}>`;
-    } else if (step.type === "push") {
-        return `[${step.varName}]`;
+const stepToString = <L extends Location>(step: Step<L>): string => {
+    switch (step.type) {
+        case "pop":
+            return `${step.location}<${step.varName}>`;
+        case "push":
+            return `[${step.varName}]${step.location}`;
+        case "sum":
+            return `(${step.left} + ${step.right})`;
+        case "skip":
+            return starUnit;
     }
-    let x: never;
-    x = step;
 };
 
 const exprToString = (expr: RMCExpr) => {
@@ -100,41 +211,7 @@ type RMCStepFns = {
     [S in StepNames]: RMCExecutionFn;
 };
 
-const applySubstitution = <T>(varName: string, substitutionMap: SubstitutionMap<T>): T | Variable => {
-    const hasDef = substitutionMap.has(varName);
-
-    if (hasDef) {
-        const definition = substitutionMap.get(varName) as Variable | T;
-
-        if (isVariable(definition)) {
-            // Go to the end of the chain of variables defined as variables. This will terminate in a variable that is undefined (in which case the variable itself is returned) or defined as a non-variable value.
-            return applySubstitution(definition.varName, substitutionMap);
-        } else {
-            return definition;
-        }
-    } else {
-        const self: Variable = {
-            type: RMCVar,
-            varName,
-        };
-        return self;
-    }
-};
-
-const updateSubstitution =
-    (varName: string) =>
-    <T>(definition: Variable | T) =>
-    (substitutionMap: SubstitutionMap<T>) => {
-        if (substitutionMap.has(varName)) {
-            throw new Error("variable is already defined, cannot be changed.");
-        }
-        const newMap = new Map(substitutionMap);
-
-        newMap.set(varName, definition);
-        return newMap;
-    };
-
-const popExec: RMCExecutionFn = ({ program, stacks, substitutionMap }) => {
+const popExec: RMCExecutionFn = <T>({ program, stacks }) => {
     const [pop, ...rest] = program.sequence;
     if (pop.type !== "pop") {
         throw new Error();
@@ -143,12 +220,18 @@ const popExec: RMCExecutionFn = ({ program, stacks, substitutionMap }) => {
 
     // Have to apply this to multiple stacks!
     // TODO: come back to this.
-    const popResult = stack.pop();
-
-    const definition = applySubstitution(varName, substitutionMap);
-    if (isVariable(definition)) {
-        updateSubstitution(definition.varName);
-    } else {
+    function popOneStack(stack: RMCStack<T>) {
+        const { substitutionMap } = stack;
+        const definition = applySubstitution(varName, substitutionMap);
+        const popResult = stack.pop();
+        if (popResult === RMCFail) {
+            return RMCFail;
+        }
+        if (isVariable(definition)) {
+            // If the definition is a variable that implies it is an undefined variable. Otherwise it would have been replaced with either the constant or another variable that it is defined to be.
+            stack.substitutionMap = updateSubstitution(definition.varName)(substitutionMap);
+        } else {
+        }
     }
 };
 const pushExec: RMCExecutionFn = ({ program, stacks, substitutionMap }) => {};
